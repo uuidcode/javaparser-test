@@ -8,19 +8,14 @@ import org.junit.Test;
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Modifier;
+import com.github.javaparser.ast.NodeList;
+import com.github.javaparser.ast.body.BodyDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
-import com.github.javaparser.ast.expr.FieldAccessExpr;
-import com.github.javaparser.ast.expr.MethodCallExpr;
-import com.github.javaparser.ast.expr.NameExpr;
-import com.github.javaparser.ast.expr.StringLiteralExpr;
 import com.github.javaparser.ast.stmt.BlockStmt;
-import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.TypeParameter;
-
-import jdk.nashorn.internal.codegen.CompileUnit;
 
 public class Parse {
     @Test
@@ -48,7 +43,6 @@ public class Parse {
                 Integer line = f.getRange().map(r -> r.begin.line).orElse(0);
                 System.out.println("check field at line " + line);
             });
-
     }
 
     @Test
@@ -99,14 +93,54 @@ public class Parse {
 
     @Test
     public void addField() throws Exception {
-        CompilationUnit compilationUnit = JavaParser.parse(new File("src/test/java/MyClass.java"));
-        ClassOrInterfaceDeclaration targetClass = compilationUnit.findAll(ClassOrInterfaceDeclaration.class)
+        File myClassFile = new File("src/test/java/MyClass.java");
+        CompilationUnit compilationUnit = JavaParser.parse(myClassFile);
+        ClassOrInterfaceDeclaration targetClass = compilationUnit
+            .findAll(ClassOrInterfaceDeclaration.class)
             .stream()
             .findFirst()
             .get();
 
         targetClass.addPrivateField(String.class, "uuid");
 
+        this.generateSetMethod(targetClass, "String", "uuid");
+
+        NodeList<BodyDeclaration<?>> bodyDeclarationNodeList = targetClass.getMembers();
+
+        bodyDeclarationNodeList.sort((a, b) -> {
+            if (a instanceof FieldDeclaration && b instanceof MethodDeclaration) {
+                return -1;
+            }
+
+            if (a instanceof FieldDeclaration && b instanceof FieldDeclaration) {
+                return 0;
+            }
+
+            if (a instanceof MethodDeclaration && b instanceof MethodDeclaration) {
+                return 0;
+            }
+
+            if (a instanceof MethodDeclaration && b instanceof FieldDeclaration) {
+                return 1;
+            }
+
+            return 0;
+        });
+
         System.out.println(compilationUnit.toString());
+    }
+
+    private void generateSetMethod(ClassOrInterfaceDeclaration targetClass, String typeName, String name) {
+        Parameter parameter = new Parameter(new TypeParameter(typeName), name);
+
+        BlockStmt blockStmt = new BlockStmt();
+        blockStmt.addStatement(String.format("this.%s = %s;", name, name));
+        blockStmt.addStatement("return this;");
+
+        String methodName = "set" + name.substring(0, 1).toUpperCase() + name.substring(1);
+        MethodDeclaration methodDeclaration = targetClass.addMethod(methodName, Modifier.PUBLIC);
+        methodDeclaration.addParameter(parameter);
+        methodDeclaration.setType(targetClass.getNameAsString());
+        methodDeclaration.setBody(blockStmt);
     }
 }
